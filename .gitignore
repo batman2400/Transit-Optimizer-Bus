@@ -35,3 +35,12 @@ out/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Large data & model artifacts (regenerate locally)
+*.parquet
+**/route100_final_dataset.csv
+**/models/*.pth
+**/models/*.pkl
+**/models/*.joblib
+backend/route100_final_dataset.csv
+Backend/route100_final_dataset.csv

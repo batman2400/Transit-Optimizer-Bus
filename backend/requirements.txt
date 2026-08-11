@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pandas
+pyarrow
+numpy
+scikit-learn
+torch
+holidays
+joblib
+pydantic
+python-multipart

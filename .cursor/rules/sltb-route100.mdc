@@ -1,0 +1,18 @@
+---
+description: SLTB Route 100 locked architecture — MLP, headway, no A*
+alwaysApply: true
+---
+
+# SLTB Route 100 — Non-negotiables
+
+Read `AGENTS.md` and `docs/ARCHITECTURE.md` before changing backend/frontend.
+Folders: `backend/`, `frontend/` (lowercase). Status: implemented + audit-fixed.
+
+- **ML:** PyTorch MLP only (BN, Dropout, Huber, Early Stopping, MinMaxScaler). Never RF/XGBoost/StandardScaler.
+- **Dispatch:** `dispatch.py` headway only — peak_stop + corridor_eta. Never A*, never `routing.py`, never `/route`.
+- **Capacity 80:** `buses = max(1, ceil(peak/80))`; `headway = clamp(round(60/buses), 3, 30)`.
+- **ETL:** ~800k stratified by (direction, hour); `operating_day`; `trip_departure`; `stop_id % 8`; LK holidays; rain + event injection.
+- **API:** recompute calendar flags from `date` via `enrich_calendar` (Mon=0).
+- **Frontend:** Open-Meteo Colombo; DOW via `(getDay()+6)%7`; show headway / peak / corridor ETA.
+- **Gitignore:** do not commit parquet, `route100_final_dataset.csv`, or large model binaries.
+- Keep `docs/IMPLEMENTATION_PLAN.md` in sync when behavior changes.
