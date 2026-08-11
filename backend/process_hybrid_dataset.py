@@ -1,6 +1,6 @@
 """
 Hybrid ETL: Kaggle public_transport.parquet → route100_final_dataset.csv
-Stratified ~800k sample with Sri Lankan domain features + rain/event injection.
+Stratified ~800k sample with Colombo-calibrated demand + rain/event injection.
 """
 from __future__ import annotations
 
@@ -20,6 +20,21 @@ STOPS = [
     "Kollupitiya",
     "Pettah",
 ]
+STOP_WEIGHTS = {
+    "Panadura": 0.85,
+    "Moratuwa": 0.90,
+    "Mt_Lavinia": 0.95,
+    "Dehiwala": 1.00,
+    "Wellawatta": 1.05,
+    "Bambalapitiya": 1.15,
+    "Kollupitiya": 1.25,
+    "Pettah": 1.30,
+}
+# Scale base passengers so weekday AM inbound CBD peaks commonly land in 80–200.
+GLOBAL_SCALE = 3.2
+# Term-weekday school start (06–07) / finish (13–14) demand bump.
+SCHOOL_RUSH_HOURS = (6, 7, 13, 14)
+SCHOOL_RUSH_SCALE = 1.40
 PARQUET_PATH = (
     "kaggle Public Transportation Passenger Counts dataset/public_transport.parquet"
 )
@@ -66,6 +81,66 @@ def stratified_sample(df: pd.DataFrame, n: int, seed: int = SEED) -> pd.DataFram
     return sampled.drop(columns=["_hour", "_stratum"]).reset_index(drop=True)
 
 
+def peak_multiplier(hour: int, soft_day: bool) -> float:
+    """soft_day = weekend or public holiday."""
+    if hour in (7, 8, 9):
+        return 1.15 if soft_day else 2.4
+    if 10 <= hour <= 15:
+        return 1.05 if soft_day else 1.1
+    if hour in (16, 17, 18, 19):
+        return 1.15 if soft_day else 2.2
+    return 0.50 if soft_day else 0.55
+
+
+def direction_multiplier(direction: str, hour: int) -> float:
+    inbound = direction == "Inbound_to_Pettah"
+    if hour in (7, 8, 9):
+        return 1.35 if inbound else 0.85
+    if hour in (16, 17, 18, 19):
+        return 0.85 if inbound else 1.35
+    return 1.0
+
+
+def calendar_multiplier(row: pd.Series) -> float:
+    m = 1.0
+    if row["is_payday_week"]:
+        m *= 1.20
+    if row["is_public_holiday"]:
+        m *= 0.70
+    elif row["is_weekend"]:
+        m *= 0.80
+    if row["is_school_holiday"]:
+        m *= 0.90
+    return m
+
+
+def apply_colombo_demand(df: pd.DataFrame) -> pd.Series:
+    """Peak × direction × stop × calendar × school rush × global scale (before event/rain)."""
+    soft = (df["is_weekend"] == 1) | (df["is_public_holiday"] == 1)
+    peak = [
+        peak_multiplier(int(h), bool(s))
+        for h, s in zip(df["hour"].to_numpy(), soft.to_numpy())
+    ]
+    direction = [
+        direction_multiplier(d, int(h))
+        for d, h in zip(df["direction"].to_numpy(), df["hour"].to_numpy())
+    ]
+    stop = df["stop_name"].map(STOP_WEIGHTS).fillna(1.0).to_numpy()
+    cal = df.apply(calendar_multiplier, axis=1).to_numpy()
+    rush = np.where(df["is_school_rush"].to_numpy() == 1, SCHOOL_RUSH_SCALE, 1.0)
+    base = df["passenger_count"].to_numpy(dtype=np.float64)
+    scaled = (
+        base
+        * np.array(peak)
+        * np.array(direction)
+        * stop
+        * cal
+        * rush
+        * GLOBAL_SCALE
+    )
+    return np.maximum(0, np.round(scaled)).astype(int)
+
+
 def main() -> None:
     print("Loading raw data...")
     df_raw = pd.read_parquet(PARQUET_PATH)
@@ -84,7 +159,6 @@ def main() -> None:
     )
     if df["date"].isna().mean() > 0.5:
         df["date"] = pd.to_datetime(df["operating_day"], dayfirst=True, errors="coerce")
-    # Drop rows that failed date parse
     bad = df["date"].isna().sum()
     if bad:
         print(f"  dropping {bad:,} rows with unparseable operating_day")
@@ -114,9 +188,28 @@ def main() -> None:
         (df["date"].dt.day >= 25) | (df["date"].dt.day <= 5)
     ).astype(int)
 
+    df["is_am_peak"] = df["hour"].isin([7, 8, 9]).astype(int)
+    df["is_pm_peak"] = df["hour"].isin([16, 17, 18, 19]).astype(int)
+    df["month"] = df["date"].dt.month.astype(int)
+
+    term_weekday = (
+        (df["is_weekend"] == 0)
+        & (df["is_public_holiday"] == 0)
+        & (df["is_school_holiday"] == 0)
+    )
+    df["is_school_rush"] = (
+        df["hour"].isin(list(SCHOOL_RUSH_HOURS)) & term_weekday
+    ).astype(int)
+
     df["event_override"] = 0
     df["weather"] = "Clear"
     df["passenger_count"] = df["passengers"].fillna(0).astype(int)
+
+    print(
+        "Applying Colombo demand multipliers "
+        "(peak/direction/stop/calendar/school-rush)..."
+    )
+    df["passenger_count"] = apply_colombo_demand(df)
 
     rng = np.random.default_rng(SEED)
 
@@ -128,13 +221,24 @@ def main() -> None:
         df.loc[event_idx, "passenger_count"].to_numpy() * boost
     ).astype(int)
 
-    print("Injecting rain (40% of top-quartile demand rows)...")
+    print("Injecting rain (top-quartile 40% + mild independent ~8%)...")
     threshold_75 = df["passenger_count"].quantile(0.75)
-    high_demand_idx = df.index[df["passenger_count"] >= threshold_75]
+    high_mask = df["passenger_count"] >= threshold_75
+    high_demand_idx = df.index[high_mask]
     rain_idx = (
         pd.Series(high_demand_idx).sample(frac=0.40, random_state=SEED).to_numpy()
     )
     df.loc[rain_idx, "weather"] = "Rain"
+
+    # Mild independent rain on non–top-quartile, non-event rows so Rain ≠ only extremes
+    mild_pool = df.index[~high_mask & (df["event_override"] == 0)]
+    mild_n = max(1, int(round(0.08 * len(mild_pool))))
+    mild_idx = rng.choice(mild_pool.to_numpy(), size=min(mild_n, len(mild_pool)), replace=False)
+    mild_boost = rng.uniform(1.12, 1.18, size=len(mild_idx))
+    df.loc[mild_idx, "weather"] = "Rain"
+    df.loc[mild_idx, "passenger_count"] = (
+        df.loc[mild_idx, "passenger_count"].to_numpy() * mild_boost
+    ).astype(int)
 
     final_cols = [
         "date",
@@ -146,6 +250,10 @@ def main() -> None:
         "is_public_holiday",
         "is_school_holiday",
         "is_payday_week",
+        "is_am_peak",
+        "is_pm_peak",
+        "is_school_rush",
+        "month",
         "event_override",
         "weather",
         "passenger_count",
@@ -163,10 +271,21 @@ def main() -> None:
         .eq("Rain")
         .mean()
     )
+    # Sanity: weekday 08:00 inbound CBD peak should often exceed capacity
+    weekday_am = df_final[
+        (df_final["is_weekend"] == 0)
+        & (df_final["is_public_holiday"] == 0)
+        & (df_final["hour"] == 8)
+        & (df_final["direction"] == "Inbound_to_Pettah")
+        & (df_final["stop_name"].isin(["Pettah", "Kollupitiya"]))
+    ]
+    p90 = float(weekday_am["passenger_count"].quantile(0.9)) if len(weekday_am) else 0.0
     print(
         f"Done. event_rate={event_rate:.3f}, "
         f"rain_in_top_quartile={rain_share_top:.3f}, "
-        f"holiday_rate={df_final['is_public_holiday'].mean():.3f}"
+        f"holiday_rate={df_final['is_public_holiday'].mean():.3f}, "
+        f"school_rush_rate={df_final['is_school_rush'].mean():.3f}, "
+        f"weekday_08_inbound_cbd_p90={p90:.1f}"
     )
 
 

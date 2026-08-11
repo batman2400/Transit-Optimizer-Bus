@@ -1,26 +1,130 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink: #1a2421;
+  --teal: #0b4f54;
+  --teal-deep: #073a3e;
+  --amber: #c45c26;
+  --mist: #e8eeec;
+  --paper: #f4f7f5;
+  --line: #c5d2cd;
+  --muted: #5a6b66;
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-ink: var(--ink);
+  --color-teal: var(--teal);
+  --color-teal-deep: var(--teal-deep);
+  --color-amber: var(--amber);
+  --color-mist: var(--mist);
+  --color-paper: var(--paper);
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-manrope);
+  --font-display: var(--font-fraunces);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+}
+
+.depot-atmosphere {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(ellipse 90% 55% at 8% -10%, rgba(11, 79, 84, 0.12), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, rgba(196, 92, 38, 0.07), transparent 50%),
+    linear-gradient(180deg, rgba(232, 238, 236, 0.9) 0%, transparent 28%),
+    repeating-linear-gradient(
+      -12deg,
+      transparent,
+      transparent 11px,
+      rgba(11, 79, 84, 0.015) 11px,
+      rgba(11, 79, 84, 0.015) 12px
+    );
+}
+
+.font-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+.seg-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.seg-btn:hover {
+  color: var(--ink);
+  background: rgba(11, 79, 84, 0.06);
+}
+
+.seg-btn[data-active="true"] {
+  color: white;
+  background: var(--teal);
+}
+
+.seg-group {
+  display: flex;
+  border: 1px solid var(--line);
+  background: white;
+  overflow: hidden;
+}
+
+.field-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: white;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.field-input:focus {
+  border-color: var(--teal);
+}
+
+.hour-range {
+  width: 100%;
+  accent-color: var(--teal);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anim-fade-up {
+  animation: fade-up 0.45s ease-out both;
+}
+
+.anim-delay-1 {
+  animation-delay: 0.06s;
+}
+.anim-delay-2 {
+  animation-delay: 0.12s;
+}
+.anim-delay-3 {
+  animation-delay: 0.18s;
 }

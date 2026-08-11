@@ -6,13 +6,14 @@ alwaysApply: true
 # SLTB Route 100 — Non-negotiables
 
 Read `AGENTS.md` and `docs/ARCHITECTURE.md` before changing backend/frontend.
-Folders: `backend/`, `frontend/` (lowercase). Status: implemented + audit-fixed.
+Folders: `backend/`, `frontend/` (lowercase). Status: audit-fixed baseline + Colombo realism upgrade as architecture of record.
 
 - **ML:** PyTorch MLP only (BN, Dropout, Huber, Early Stopping, MinMaxScaler). Never RF/XGBoost/StandardScaler.
-- **Dispatch:** `dispatch.py` headway only — peak_stop + corridor_eta. Never A*, never `routing.py`, never `/route`.
-- **Capacity 80:** `buses = max(1, ceil(peak/80))`; `headway = clamp(round(60/buses), 3, 30)`.
-- **ETL:** ~800k stratified by (direction, hour); `operating_day`; `trip_departure`; `stop_id % 8`; LK holidays; rain + event injection.
-- **API:** recompute calendar flags from `date` via `enrich_calendar` (Mon=0).
-- **Frontend:** Open-Meteo Colombo; DOW via `(getDay()+6)%7`; show headway / peak / corridor ETA.
+- **Dispatch:** `dispatch.py` headway only — peak_stop + corridor_eta (+ weekday peak congestion on ETA). Never A*, never `routing.py`, never `/route`.
+- **Capacity 80:** `buses = max(1, ceil(peak/80))`; `headway = clamp(round(60/buses), 3, 30)`. Weekday rush demand should often exceed 80 so headway responds.
+- **ETL:** ~800k stratified by (direction, hour); `operating_day`; `trip_departure`; `stop_id % 8`; LK holidays; Colombo peak/direction/stop/calendar + school-rush ×1.40 (hours 6–7 & 13–14 term weekdays); rain (top-quartile 40% + mild independent) + event (~5%).
+- **Features:** include `is_am_peak`, `is_pm_peak`, `is_school_rush`, `month`; train reports MAE/RMSE → `metrics.json`.
+- **API:** auto-enrich calendar from `date` via `enrich_calendar` (Mon=0); honor `holiday_mode` / `school_holiday_mode` / `school_rush_mode` overrides; `/dispatch` returns expanded `calendar_context`.
+- **Frontend:** Light depot board; Open-Meteo for selected date; day-type + school vacation + school rush overrides; corridor rail; show headway / peak / corridor ETA.
 - **Gitignore:** do not commit parquet, `route100_final_dataset.csv`, or large model binaries.
 - Keep `docs/IMPLEMENTATION_PLAN.md` in sync when behavior changes.
