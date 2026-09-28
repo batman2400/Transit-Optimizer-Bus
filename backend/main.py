@@ -219,6 +219,8 @@ def enrich_calendar(row: dict) -> dict:
         raise HTTPException(status_code=400, detail=f"Invalid date: {row.get('date')}")
     hour = int(row.get("hour", 0))
     out = dict(row)
+    out["event_override"] = int(row.get("event_override", 0))
+    out["weather"] = str(row.get("weather", "Clear"))
 
     # Auto baseline — ignore any client-sent is_* calendar flags.
     out["day_of_week"] = int(d.dayofweek)

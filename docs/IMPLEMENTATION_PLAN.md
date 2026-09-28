@@ -14,7 +14,7 @@ On-disk paths: `backend/`, `frontend/` (lowercase).
 7. Holidays → **LK via `holidays`**; API auto-enrich + optional `holiday_mode` / `school_holiday_mode` / `school_rush_mode`; UI shows `calendar_context`
 8. Scaler → **MinMaxScaler** (not StandardScaler)
 9. Git → gitignore parquet / models / CSV
-10. Colombo demand → peak/direction/stop/calendar + school-rush ×1.40 (06–07 & 13–14 term weekdays); weekday rush peaks often >80
+10. Colombo demand → peak/direction/stop/calendar + school-rush ×1.40 (06–07 & 13–14 term weekdays); GLOBAL_SCALE=18.0 calibrated so rush peaks land in 800–1200 pax for realistic 4–5 min headway
 11. Rain → top-quartile 40% Rain **plus** mild independent rain (~8% non–top-quartile ×1.12–1.18)
 12. Extra features → `is_am_peak`, `is_pm_peak`, `is_school_rush`, `month`; metrics → `models/metrics.json`
 

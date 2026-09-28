@@ -66,7 +66,7 @@ Galle Road is among Colombo’s busiest corridors; morning peak often ~07:15–0
 
 **School rush:** after the peak/direction/stop/calendar stack, term-weekday rows with `hour in {6, 7, 13, 14}` get **×1.40** (`is_school_rush=1`) to capture sudden start/finish student demand.
 
-**Global scale:** weekday AM inbound CBD peaks commonly land in **80–200** pax so `ceil(peak/80)` yields 2+ buses and headway &lt; 30.
+**Global scale:** calibrated to `GLOBAL_SCALE = 18.0` so weekday AM/PM inbound/outbound rush peak loads land in **800–1200** pax/hour, yielding realistic Colombo Galle Road peak headways of **4–5 minutes** (`buses = 12–15`), school rush **6–8 minutes**, midday **10 minutes**, and late night **30 minutes**.
 
 ### ETL steps (order)
 

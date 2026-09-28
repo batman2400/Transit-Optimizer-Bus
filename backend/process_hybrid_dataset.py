@@ -30,8 +30,9 @@ STOP_WEIGHTS = {
     "Kollupitiya": 1.25,
     "Pettah": 1.30,
 }
-# Scale base passengers so weekday AM inbound CBD peaks commonly land in 80–200.
-GLOBAL_SCALE = 3.2
+# Scale base passengers so weekday AM/PM peak corridor demand lands in 800–1200 pax,
+# yielding realistic peak headways of 4–5 minutes (buses=12–15) and midday headways of 8–12 minutes.
+GLOBAL_SCALE = 18.0
 # Term-weekday school start (06–07) / finish (13–14) demand bump.
 SCHOOL_RUSH_HOURS = (6, 7, 13, 14)
 SCHOOL_RUSH_SCALE = 1.40

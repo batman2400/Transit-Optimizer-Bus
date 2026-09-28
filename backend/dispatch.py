@@ -66,7 +66,11 @@ def calculate_dispatch(
     ):
         congestion = PEAK_CONGESTION
 
-    dwell_total = sum(DWELL_MIN_PER_PAX * max(0.0, p) for p in predictions)
+    # Dwell experienced by an individual dispatched bus (pax per bus = hourly pax / buses_needed)
+    dwell_total = min(
+        20.0,
+        sum(DWELL_MIN_PER_PAX * (max(0.0, p) / max(1, buses_needed)) for p in predictions),
+    )
     corridor_eta = float(sum(BASE_TRAVEL_MINUTES) * congestion + dwell_total)
 
     return {
