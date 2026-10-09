@@ -3,8 +3,15 @@ FastAPI service: demand prediction + dynamic headway dispatch for Route 100.
 """
 from __future__ import annotations
 
+import os
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import List, Literal
+
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 import holidays
 import joblib
@@ -15,14 +22,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from dispatch import calculate_dispatch
-from train_model import DemandPredictorMLP
+try:
+    from dispatch import calculate_dispatch
+    from train_model import DemandPredictorMLP
+except ImportError:
+    from backend.dispatch import calculate_dispatch
+    from backend.train_model import DemandPredictorMLP
 
 HolidayMode = Literal["auto", "none", "poya", "government"]
 SchoolHolidayMode = Literal["auto", "off", "on"]
 SchoolRushMode = Literal["auto", "off", "on"]
 HolidayType = Literal["none", "poya", "government"]
-SCHOOL_RUSH_HOURS = (6, 7, 13, 14)
+SCHOOL_RUSH_HOURS = (7, 13, 14)
 
 STOPS_INBOUND = [
     "Panadura",
@@ -62,6 +73,9 @@ FEATURE_COLS = [
     "event_override",
 ]
 
+BASE_DIR = Path(__file__).resolve().parent
+MODELS_DIR = BASE_DIR / "models"
+
 model = None
 preprocessor = None
 input_dim = None
@@ -70,9 +84,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def _load_artifacts() -> None:
     global model, preprocessor, input_dim
-    preprocessor = joblib.load("models/preprocessor.pkl")
+    preprocessor = joblib.load(MODELS_DIR / "preprocessor.pkl")
     checkpoint = torch.load(
-        "models/demand_predictor.pth", map_location=device, weights_only=False
+        MODELS_DIR / "demand_predictor.pth", map_location=device, weights_only=False
     )
     if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
         input_dim = int(checkpoint["input_dim"])
@@ -124,9 +138,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins if allowed_origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -177,12 +194,20 @@ class DispatchRequest(BaseModel):
 
 
 def peak_period_label(hour: int) -> str:
-    if hour in (7, 8, 9):
+    if hour in (7, 8):
         return "am_peak"
-    if 10 <= hour <= 15:
-        return "midday"
-    if hour in (16, 17, 18, 19):
+    if hour == 9:
+        return "morning_taper"
+    if hour in (10, 11):
+        return "midday_lull"
+    if hour in (12, 13, 15):
+        return "afternoon_active"
+    if hour == 14:
+        return "school_peak"
+    if hour in (16, 17, 18):
         return "pm_peak"
+    if hour == 19:
+        return "evening_taper"
     return "off_peak"
 
 
@@ -262,8 +287,8 @@ def enrich_calendar(row: dict) -> dict:
         out["is_school_holiday"] = 0
 
     out["is_payday_week"] = 1 if (d.day >= 25 or d.day <= 5) else 0
-    out["is_am_peak"] = 1 if hour in (7, 8, 9) else 0
-    out["is_pm_peak"] = 1 if hour in (16, 17, 18, 19) else 0
+    out["is_am_peak"] = 1 if hour in (7, 8) else 0
+    out["is_pm_peak"] = 1 if hour in (16, 17, 18) else 0
     out["month"] = int(d.month)
 
     # School rush after applied holiday/school flags (term weekday + rush hours).

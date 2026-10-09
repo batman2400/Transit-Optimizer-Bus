@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -54,11 +54,51 @@ type DispatchData = {
 };
 
 const PEAK_LABELS: Record<string, string> = {
-  am_peak: "AM Peak",
-  pm_peak: "PM Peak",
-  midday: "Midday",
-  off_peak: "Off-peak",
+  am_peak: "AM Peak (Rush)",
+  morning_taper: "Morning Taper",
+  midday_lull: "Midday Off-Peak (Empty)",
+  afternoon_active: "Afternoon Active",
+  school_peak: "School Rush Peak",
+  pm_peak: "PM Peak (Rush)",
+  evening_taper: "Evening Taper",
+  off_peak: "Off-Peak (Night / Empty)",
 };
+
+function getCrowdStatus(peakLoad: number) {
+  if (peakLoad <= 40) {
+    return {
+      label: "Very Light (Empty)",
+      description: "Buses running mostly empty with ample open seating",
+      badgeClass: "border-emerald-600/40 bg-emerald-500/10 text-emerald-800",
+    };
+  }
+  if (peakLoad <= 120) {
+    return {
+      label: "Light (Seated)",
+      description: "Low demand, seats readily available on board",
+      badgeClass: "border-teal/40 bg-teal/10 text-teal",
+    };
+  }
+  if (peakLoad <= 350) {
+    return {
+      label: "Moderate",
+      description: "Steady ridership comfortably within bus capacity",
+      badgeClass: "border-sky-600/40 bg-sky-500/10 text-sky-800",
+    };
+  }
+  if (peakLoad <= 700) {
+    return {
+      label: "Crowded",
+      description: "High passenger volume, standees expected along corridor",
+      badgeClass: "border-amber/50 bg-amber/15 text-amber",
+    };
+  }
+  return {
+    label: "Very Crowded (Rush Peak)",
+    description: "Corridor capacity saturation — maximum frequency dispatch",
+    badgeClass: "border-rose-600/50 bg-rose-500/15 text-rose-800",
+  };
+}
 
 const HOLIDAY_TYPE_LABELS: Record<HolidayType, string> = {
   none: "Working day",
@@ -84,6 +124,9 @@ const SCHOOL_RUSH_OPTIONS: { value: SchoolRushMode; label: string }[] = [
   { value: "off", label: "No" },
   { value: "on", label: "Yes" },
 ];
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000";
 
 function stopLabel(name: string): string {
   return name.replace(/_/g, " ");
@@ -191,37 +234,61 @@ export default function Dashboard() {
     };
   }, [date]);
 
-  const fetchPredictions = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const payload = {
-        date,
-        hour,
-        direction,
-        event_override: eventOverride ? 1 : 0,
-        weather,
-        holiday_mode: holidayMode,
-        school_holiday_mode: schoolHolidayMode,
-        school_rush_mode: schoolRushMode,
-      };
+  useEffect(() => {
+    let ignore = false;
+    const controller = new AbortController();
 
-      const res = await fetch("http://127.0.0.1:8000/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    queueMicrotask(() => {
+      if (!ignore) {
+        setLoading(true);
+        setError(null);
+      }
+    });
 
-      if (!res.ok) throw new Error("API request failed — is the backend running?");
+    async function executeFetch() {
+      try {
+        const payload = {
+          date,
+          hour,
+          direction,
+          event_override: eventOverride ? 1 : 0,
+          weather,
+          holiday_mode: holidayMode,
+          school_holiday_mode: schoolHolidayMode,
+          school_rush_mode: schoolRushMode,
+        };
 
-      const result = (await res.json()) as DispatchData;
-      setData(result);
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setLoading(false);
+        const res = await fetch(`${API_BASE_URL}/dispatch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) throw new Error("API request failed — is the backend running?");
+
+        const result = (await res.json()) as DispatchData;
+        if (!ignore) {
+          setData(result);
+        }
+      } catch (err: unknown) {
+        if (!ignore && !(err instanceof DOMException && err.name === "AbortError")) {
+          console.error(err);
+          setError(err instanceof Error ? err.message : "Request failed");
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
     }
+
+    executeFetch();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
   }, [
     date,
     hour,
@@ -233,10 +300,6 @@ export default function Dashboard() {
     schoolRushMode,
   ]);
 
-  useEffect(() => {
-    fetchPredictions();
-  }, [fetchPredictions]);
-
   const chartData =
     data?.stops.map((stop, idx) => ({
       name: stopLabel(stop),
@@ -246,7 +309,8 @@ export default function Dashboard() {
 
   const rec = data?.dispatch_recommendation;
   const cal = data?.calendar_context;
-  const peakTight = Boolean(rec && (rec.buses_needed >= 2 || rec.headway_minutes < 30));
+  const peakTight = Boolean(rec && (rec.headway_minutes <= 7 || rec.buses_needed >= 8));
+  const crowdStatus = rec ? getCrowdStatus(rec.peak_load) : null;
   const peakStop = rec?.peak_stop;
 
   const autoHint =
@@ -535,6 +599,25 @@ export default function Dashboard() {
                 </p>
               </div>
             </div>
+
+            {/* Crowd status banner */}
+            {crowdStatus && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-paper px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[0.7rem] font-semibold uppercase tracking-wider text-muted">
+                    Corridor crowd:
+                  </span>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 text-xs font-semibold border ${crowdStatus.badgeClass}`}
+                  >
+                    {crowdStatus.label}
+                  </span>
+                </div>
+                <p className="text-xs text-muted">
+                  {crowdStatus.description}
+                </p>
+              </div>
+            )}
 
             {/* Corridor stop rail */}
             <div>

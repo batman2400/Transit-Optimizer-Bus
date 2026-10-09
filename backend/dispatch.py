@@ -62,7 +62,7 @@ def calculate_dispatch(
     if (
         hour is not None
         and not soft_day
-        and (hour in (7, 8, 9) or hour in (16, 17, 18, 19))
+        and (hour in (7, 8) or hour in (14, 16, 17, 18))
     ):
         congestion = PEAK_CONGESTION
 

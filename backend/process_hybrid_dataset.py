@@ -33,9 +33,9 @@ STOP_WEIGHTS = {
 # Scale base passengers so weekday AM/PM peak corridor demand lands in 800–1200 pax,
 # yielding realistic peak headways of 4–5 minutes (buses=12–15) and midday headways of 8–12 minutes.
 GLOBAL_SCALE = 18.0
-# Term-weekday school start (06–07) / finish (13–14) demand bump.
-SCHOOL_RUSH_HOURS = (6, 7, 13, 14)
-SCHOOL_RUSH_SCALE = 1.40
+# Term-weekday school start (07) / finish (13–14) demand bump.
+SCHOOL_RUSH_HOURS = (7, 13, 14)
+SCHOOL_RUSH_SCALE = 1.35
 PARQUET_PATH = (
     "kaggle Public Transportation Passenger Counts dataset/public_transport.parquet"
 )
@@ -82,23 +82,56 @@ def stratified_sample(df: pd.DataFrame, n: int, seed: int = SEED) -> pd.DataFram
     return sampled.drop(columns=["_hour", "_stratum"]).reset_index(drop=True)
 
 
+HOURLY_MULTIPLIERS_WEEKDAY = {
+    0: 0.10, 1: 0.08, 2: 0.08, 3: 0.08, 4: 0.08,
+    5: 0.09,   # Very very less crowd (~20-25 pax, empty)
+    6: 0.15,   # Less crowd (~50-60 pax)
+    7: 1.15,   # Crowded (AM rush starts)
+    8: 1.65,   # Crowded (AM peak)
+    9: 0.55,   # Little crowded (post-rush taper)
+    10: 0.12,  # Not much / very low baseline empty (~40 pax)
+    11: 0.11,  # Same as 10 (~40 pax)
+    12: 0.65,  # Crowded (lunch / dismissals)
+    13: 0.75,  # Crowded (primary school close)
+    14: 1.45,  # Very crowded (secondary schools close/tuition)
+    15: 0.65,  # Crowded (after-school transition)
+    16: 1.05,  # Crowded (outbound office departures)
+    17: 2.10,  # Very very crowded (peak office rush)
+    18: 2.30,  # Also same: very very crowded peak rush
+    19: 0.70,  # Crowded (evening taper)
+    20: 0.15,  # Less crowd (shops close, buses empty out)
+    21: 0.09,  # Very less crowded (night service empty)
+    22: 0.08,  # Very less crowded (empty)
+    23: 0.08,  # Very less crowded (empty)
+}
+
+HOURLY_MULTIPLIERS_SOFT = {
+    0: 0.08, 1: 0.06, 2: 0.06, 3: 0.06, 4: 0.06,
+    5: 0.07, 6: 0.10,
+    7: 0.40, 8: 0.55, 9: 0.45,
+    10: 0.20, 11: 0.25, 12: 0.40, 13: 0.40,
+    14: 0.45, 15: 0.45, 16: 0.50, 17: 0.65,
+    18: 0.65, 19: 0.45, 20: 0.12, 21: 0.08,
+    22: 0.06, 23: 0.06,
+}
+
+
 def peak_multiplier(hour: int, soft_day: bool) -> float:
     """soft_day = weekend or public holiday."""
-    if hour in (7, 8, 9):
-        return 1.15 if soft_day else 2.4
-    if 10 <= hour <= 15:
-        return 1.05 if soft_day else 1.1
-    if hour in (16, 17, 18, 19):
-        return 1.15 if soft_day else 2.2
-    return 0.50 if soft_day else 0.55
+    table = HOURLY_MULTIPLIERS_SOFT if soft_day else HOURLY_MULTIPLIERS_WEEKDAY
+    return table.get(hour, 0.10)
 
 
 def direction_multiplier(direction: str, hour: int) -> float:
     inbound = direction == "Inbound_to_Pettah"
-    if hour in (7, 8, 9):
+    if hour in (7, 8):
         return 1.35 if inbound else 0.85
-    if hour in (16, 17, 18, 19):
-        return 0.85 if inbound else 1.35
+    if hour in (13, 14):
+        return 0.90 if inbound else 1.20
+    if hour in (16, 17, 18):
+        return 0.80 if inbound else 1.40
+    if hour == 19:
+        return 0.85 if inbound else 1.20
     return 1.0
 
 
@@ -189,8 +222,8 @@ def main() -> None:
         (df["date"].dt.day >= 25) | (df["date"].dt.day <= 5)
     ).astype(int)
 
-    df["is_am_peak"] = df["hour"].isin([7, 8, 9]).astype(int)
-    df["is_pm_peak"] = df["hour"].isin([16, 17, 18, 19]).astype(int)
+    df["is_am_peak"] = df["hour"].isin([7, 8]).astype(int)
+    df["is_pm_peak"] = df["hour"].isin([16, 17, 18]).astype(int)
     df["month"] = df["date"].dt.month.astype(int)
 
     term_weekday = (
