@@ -44,3 +44,5 @@ Thumbs.db
 **/models/*.joblib
 backend/route100_final_dataset.csv
 Backend/route100_final_dataset.csv
+*.bak
+
